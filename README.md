@@ -18,6 +18,12 @@ A [FeedBack](https://github.com/got-feedback/feedBack) visualization plugin that
 auto-selects when a song's active arrangement is Vocals, with live microphone pitch
 detection and per-syllable scoring.
 
+> **Upstream attribution / Atribución original:** Karaoke Highway was created by
+> [Taynavv](https://github.com/Taynavv) in the original
+> [`Taynavv/feedback-vocals-viz`](https://github.com/Taynavv/feedback-vocals-viz)
+> repository. This fork preserves that work and adds the objective analytics and local
+> export layer documented below.
+
 ![Karaoke Highway — a pitch-ribbon highway with the singer's live white trace over the upcoming target notes, green/amber per-syllable accuracy fills, and a lyric line with a bouncing ball below](docs/hero.png)
 
 ## The idea / La idea

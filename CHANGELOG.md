@@ -8,6 +8,11 @@ Los cambios relevantes se documentan aquí siguiendo Keep a Changelog y SemVer.
 
 ## Unreleased
 
+### Documentation / Documentación
+
+- Explicitly credit Taynavv as the creator of the original Karaoke Highway plugin.
+- Se acredita explícitamente a Taynavv como creador del plugin Karaoke Highway original.
+
 ## 0.5.0 - 2026-09-12
 
 ### Added / Añadido
