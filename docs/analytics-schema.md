@@ -16,7 +16,7 @@ panel-local time - midpoint latency - device latency - mic offset -> processYinF
                        existing trace/scoring      compact collector
                                                         |
                                                         v
-                                       post-session aggregation -> local ZIP
+                           post-session aggregation -> explicit Export -> local ZIP
 ```
 
 ### Classification
@@ -40,6 +40,8 @@ YIN confidence measures estimator clarity, not singing quality. YIN exposes no s
 - Vibrato reuses the existing detrended zero-crossing estimate over about 1.6 seconds, gated to 3-9 Hz and at least 18 cents peak modulation. Rate and extent are coarse; confidence is unavailable.
 - Dynamics are linear PCM RMS and peak. Dynamic range is `20 * log10(P95 RMS / P10 RMS)` over non-silent frames, not LUFS.
 - Schema v1 applies no octave/subharmonic normalization. Raw and normalized frequencies are equal and `normalization_applied` is false.
+- Phrases follow lyric-line `+` markers. If the chart has none, gaps longer than 1.2 seconds split phrases. Sections come only from chart section data.
+- `approximate_serialized_utf8_bytes` measures the UTF-8 JSON representation of collected frames, not JavaScript heap usage.
 
 ```text
 <artist> - <title> - <timestamp>/
@@ -64,7 +66,7 @@ captura browser o bridge JUCE -> reloj compensado -> YIN existente
                                           scoring/trace   collector compacto
                                                                |
                                                                v
-                                               agregación post-sesión -> ZIP local
+                                  agregación post-sesión -> Export explícito -> ZIP local
 ```
 
 ### Clasificación
@@ -87,5 +89,7 @@ La confianza YIN mide claridad del estimador, no calidad del canto. No existe un
 - Steadiness y vibrato reutilizan los cálculos realtime existentes descritos arriba; no se inventa confidence de vibrato.
 - Dinámica usa RMS PCM lineal y peak; no es LUFS.
 - El esquema v1 no normaliza octavas ni subarmónicos: raw y normalized coinciden.
+- Las frases siguen marcadores `+` de línea; sin ellos, gaps mayores de 1,2 segundos separan frases. Las secciones proceden sólo del chart.
+- `approximate_serialized_utf8_bytes` mide el JSON UTF-8 de los frames, no el heap JavaScript real.
 
 Los archivos son los mostrados arriba. Los datos no disponibles quedan vacíos en CSV y como `null` en JSON. No se incluye `vocal.ogg` porque el plugin no graba el micrófono. A 50 ms, diez minutos producen unos 12.000 frames compactos; el límite es 36.000 y los descartes posteriores quedan registrados.

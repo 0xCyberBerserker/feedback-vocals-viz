@@ -30,7 +30,7 @@
   "collection": {
     "frame_count": 121,
     "dropped_by_capacity": 0,
-    "approximate_memory_bytes": 65594
+    "approximate_serialized_utf8_bytes": 65594
   },
   "summary": {
     "pitch": {

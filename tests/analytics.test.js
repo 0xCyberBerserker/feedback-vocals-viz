@@ -157,6 +157,10 @@ test('frame, note, phrase, section and session aggregation stays consistent', ()
     assert.equal(analysis.sections.length, 1);
     assert.equal(analysis.sections[0].note_count, 2);
     assert.equal(analysis.summary.pitch.sample_count, 2);
+    assert.equal(
+        analysis.collection.approximate_serialized_utf8_bytes,
+        new TextEncoder().encode(JSON.stringify(analysis.pitch_contour)).length,
+    );
 });
 
 test('serialization emits all required files and preserves Unicode', () => {

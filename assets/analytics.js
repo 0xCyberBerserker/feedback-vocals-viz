@@ -475,7 +475,7 @@
             collection: {
                 frame_count: frames.length,
                 dropped_by_capacity: input.droppedFrames || 0,
-                approximate_memory_bytes: JSON.stringify(frames).length,
+                approximate_serialized_utf8_bytes: new TextEncoder().encode(JSON.stringify(frames)).length,
             },
             summary: {
                 pitch: pitchMetrics(frames),
@@ -740,6 +740,8 @@
             'Onset/offset se estiman por RMS dentro de la ventana configurada y están limitados por la resolución.',
             'Vibrato and steadiness are existing realtime plugin estimates; unavailable values are empty/null.',
             'Vibrato y steadiness proceden del plugin existente; los valores no disponibles son vacíos/null.',
+            'Phrases follow lyric-line + markers; when absent, gaps longer than 1.2 s split phrases. Sections come only from chart section data.',
+            'Las frases siguen marcadores + de línea; si no existen, gaps mayores de 1,2 s separan frases. Las secciones proceden sólo del chart.',
             'This bundle contains measurements, not coaching, diagnosis, or subjective interpretation.',
             'Este bundle contiene medidas, no coaching, diagnóstico ni interpretación subjetiva.',
             `Chart / Chart: ${(analysis.song && analysis.song.chart_id) || 'unknown'}`,
