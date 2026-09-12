@@ -17,6 +17,9 @@ jobs:
       - name: Difficulty estimator unit tests
         run: node --test tests/difficulty.test.js
 
+      - name: Objective analytics unit tests
+        run: node --test tests/analytics.test.js
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

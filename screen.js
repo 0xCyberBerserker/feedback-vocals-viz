@@ -30,6 +30,31 @@
 (function () {
     'use strict';
 
+    // Analytics is an isolated UMD asset: Node loads it synchronously for tests;
+    // the browser loads it from the plugin's contained assets route. Mic startup
+    // normally gives it ample time, but a tiny bounded queue preserves frames if
+    // permission is granted before the script response arrives.
+    let _analyticsLib = null;
+    let _analyticsLoadError = null;
+    const _pendingAnalyticsFrames = [];
+    if (typeof module !== 'undefined' && module.exports) {
+        _analyticsLib = require('./assets/analytics.js');
+    } else if (typeof document !== 'undefined') {
+        const script = document.createElement('script');
+        script.src = '/api/plugins/vocals_highway/assets/analytics.js';
+        script.async = true;
+        script.onload = () => {
+            _analyticsLib = window.VocalsAnalytics || null;
+            _flushPendingAnalyticsFrames();
+            _refreshAnalyticsControls();
+        };
+        script.onerror = () => {
+            _analyticsLoadError = 'Objective analytics module could not load';
+            _refreshAnalyticsControls();
+        };
+        (document.head || document.documentElement).appendChild(script);
+    }
+
     // ── Ribbon tunables (adapted from lyrics-karaoke, rescaled) ──────────
     const VISIBLE_SECONDS = 6.0;   // horizontal time window
     const PLAYHEAD_FRAC = 0.18;    // playhead at 18% from the left edge (simple mode)
@@ -303,6 +328,9 @@
     const KEY_LEFT_PANEL = 'vocals_highway.leftPanel';   // 'scale' | 'off' — the left info bar
     const KEY_AUDIO_INPUT_MODE = 'vocals_highway.audioInputMode'; // '' (auto) | 'browser' = force getUserMedia
     const KEY_MIC_OFFSET = 'vocals_highway.micOffsetMs';          // signed wall-clock ms; positive = attribute singing earlier
+    const KEY_ANALYTICS_CONFIDENCE = 'vocals_highway.analyticsConfidence';
+    const KEY_ANALYTICS_SILENCE = 'vocals_highway.analyticsSilenceRms';
+    const KEY_ANALYTICS_INTERVAL = 'vocals_highway.analyticsIntervalMs';
     const KEY_LK_MIC = 'lyrics_karaoke.micFeedback';              // the lyrics-karaoke overlay's mic-on flag (read-only)
     const PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -421,6 +449,7 @@
     let _overlayStoodDown = false;    // paused because the lyrics-karaoke overlay is scoring
     let _lastOverlayCheckAt = -Infinity;
     let micInputLevel = 0;            // RMS of the most recent capture frame (3D meter)
+    let micInputPeak = 0;             // absolute sample peak from the same frame
 
     // Per-song scoring state.
     const userResults = new Map();    // tokenIndex → {samplesIn, samplesMatched, accuracy}
@@ -438,6 +467,9 @@
     let liveScore = 0;
     let liveStreak = 0;
     let liveBestStreak = 0;
+    let _analyticsCollector = null;
+    let lastAnalytics = null;
+    let _analyticsExportStatus = '';
 
     function _wallNow() {
         return (typeof performance !== 'undefined' && performance.now)
@@ -482,7 +514,10 @@
     // Cached scoring/capture prefs — read once at load and re-read whenever a
     // settings surface (popover, applySetting, console) writes them, so the
     // hot paths never touch localStorage per frame.
-    const prefs = { tolerance: 1.0, octaveFree: false, channel: 'mix', leftPanel: 'scale', micOffsetMs: 0 };
+    const prefs = {
+        tolerance: 1.0, octaveFree: false, channel: 'mix', leftPanel: 'scale', micOffsetMs: 0,
+        analyticsConfidence: 0.8, analyticsSilenceRms: 0.01, analyticsIntervalMs: 50,
+    };
 
     function _readPrefs() {
         const t = parseFloat(_lsGet(KEY_TOLERANCE));
@@ -503,6 +538,12 @@
             micLastCapturedAt -= ((micOffsetMs - prefs.micOffsetMs) / 1000) * getPlaybackRate();
         }
         prefs.micOffsetMs = micOffsetMs;
+        const ac = parseFloat(_lsGet(KEY_ANALYTICS_CONFIDENCE));
+        prefs.analyticsConfidence = isFinite(ac) ? Math.min(0.99, Math.max(0.5, ac)) : 0.8;
+        const asr = parseFloat(_lsGet(KEY_ANALYTICS_SILENCE));
+        prefs.analyticsSilenceRms = isFinite(asr) ? Math.min(0.2, Math.max(0.001, asr)) : 0.01;
+        const ai = parseInt(_lsGet(KEY_ANALYTICS_INTERVAL), 10);
+        prefs.analyticsIntervalMs = isFinite(ai) ? Math.min(250, Math.max(30, ai)) : 50;
     }
     _readPrefs();
 
@@ -520,6 +561,103 @@
         liveScore = 0;
         liveStreak = 0;
         liveBestStreak = 0;
+        _analyticsCollector = null;
+        _pendingAnalyticsFrames.length = 0;
+    }
+
+    function findActiveVocalTokenIndex(tokens, time) {
+        let bestIdx = -1;
+        let bestStart = -Infinity;
+        for (let i = 0; i < (tokens ? tokens.length : 0); i++) {
+            const token = tokens[i];
+            if (!token || typeof token.t !== 'number') continue;
+            if (time < token.t || time >= token.t + (token.d || 0)) continue;
+            if (token.t > bestStart) { bestStart = token.t; bestIdx = i; }
+        }
+        return bestIdx;
+    }
+
+    function _analyticsSongMetadata(inst) {
+        const songInfo = (inst && inst._songInfo) || {};
+        const current = (typeof window !== 'undefined' && window.feedBack && window.feedBack.currentSong) || {};
+        return {
+            artist: songInfo.artist || current.artist || null,
+            title: songInfo.title || current.title || null,
+            chart_id: (inst && inst._filename) || current.filename || null,
+            arrangement: songInfo.arrangement || current.arrangement || 'Vocals',
+            transposition_semitones: Number.isFinite(songInfo.transposition_semitones)
+                ? songInfo.transposition_semitones : null,
+        };
+    }
+
+    function _ensureAnalyticsCollector() {
+        if (_analyticsCollector || !_analyticsLib || !_activeInstance || !_activeInstance._tokens) {
+            return _analyticsCollector;
+        }
+        const voice = (_activeInstance._voices && _activeInstance._scoredIdx >= 0)
+            ? _activeInstance._voices[_activeInstance._scoredIdx] : {};
+        _analyticsCollector = new _analyticsLib.TelemetryCollector({
+            metadata: {
+                pluginVersion: '0.5.0',
+                song: _analyticsSongMetadata(_activeInstance),
+                voice: { id: voice.id || null, name: voice.name || null },
+            },
+            tokens: _activeInstance._tokens,
+            sections: _activeInstance._sections || [],
+            options: {
+                confidenceThreshold: prefs.analyticsConfidence,
+                silenceRms: prefs.analyticsSilenceRms,
+                contourIntervalMs: prefs.analyticsIntervalMs,
+            },
+        });
+        return _analyticsCollector;
+    }
+
+    function _collectAnalyticsFrame(frame) {
+        const collector = _ensureAnalyticsCollector();
+        if (collector) {
+            collector.addFrame(frame);
+            return;
+        }
+        if (!_analyticsLoadError && _pendingAnalyticsFrames.length < 200) {
+            _pendingAnalyticsFrames.push(frame);
+        }
+    }
+
+    function _flushPendingAnalyticsFrames() {
+        const collector = _ensureAnalyticsCollector();
+        if (!collector) return;
+        for (const frame of _pendingAnalyticsFrames) collector.addFrame(frame);
+        _pendingAnalyticsFrames.length = 0;
+    }
+
+    function _sessionDurationMs(inst) {
+        const infoDuration = inst && inst._songInfo && Number(inst._songInfo.duration);
+        if (Number.isFinite(infoDuration) && infoDuration > 0) {
+            return Math.round(infoDuration > 6000 ? infoDuration : infoDuration * 1000);
+        }
+        const tokens = (inst && inst._tokens) || [];
+        return tokens.length
+            ? Math.round(Math.max(...tokens.map((token) => token.t + (token.d || 0))) * 1000) : 0;
+    }
+
+    function _finishAnalyticsSession() {
+        _flushPendingAnalyticsFrames();
+        if (!_analyticsCollector || !_activeInstance) return null;
+        const pluginResults = {};
+        userResults.forEach((value, key) => { pluginResults[key] = { accuracy: value.accuracy }; });
+        lastAnalytics = _analyticsCollector.finish({
+            pluginResults,
+            durationMs: _sessionDurationMs(_activeInstance),
+            endedAt: new Date().toISOString(),
+        });
+        if (!lastSummary && lastAnalytics.collection.frame_count > 0) {
+            lastSummary = { accuracy: null, hits: 0, pitched: 0, bestStreak: 0, score: 0 };
+        }
+        _analyticsCollector = null;
+        _analyticsExportStatus = '';
+        _refreshAnalyticsControls();
+        return lastAnalytics;
     }
 
     function _midiDelta(a, b) {
@@ -728,7 +866,7 @@
         const dur = win[win.length - 1].t - win[0].t;
         const rate = dur > 0 ? (crossings / 2) / dur : 0;
         const present = peak * 100 >= VIBRATO_MIN_CENTS && rate >= 3 && rate <= 9;
-        voiceVibrato = { hz: rate, present };
+        voiceVibrato = { hz: rate, extentCents: peak * 100, present };
     }
 
     function processYinFrame(buffer, sampleRate, capturedAt, sessionAtCapture) {
@@ -750,6 +888,21 @@
         micLastCapturedAt = capturedAt;
 
         const r = yinDetect(buffer, sampleRate, YIN_MIN_HZ);
+        const rawFrequency = r && r.freq > 0 ? r.freq : null;
+        const analyticsIdx = findActiveVocalTokenIndex(
+            _activeInstance && _activeInstance._tokens, capturedAt);
+        _collectAnalyticsFrame({
+            timestampSeconds: capturedAt,
+            syllableIndex: analyticsIdx >= 0 ? analyticsIdx : null,
+            rawFrequencyHz: rawFrequency,
+            pitchValid: rawFrequency !== null && rawFrequency >= YIN_MIN_HZ && rawFrequency <= YIN_MAX_HZ,
+            confidence: r ? r.confidence : 0,
+            rms: micInputLevel,
+            peak: micInputPeak,
+            steadiness: voiceStability,
+            vibratoRateHz: voiceVibrato && voiceVibrato.present ? voiceVibrato.hz : null,
+            vibratoExtentCents: voiceVibrato && voiceVibrato.present ? voiceVibrato.extentCents : null,
+        });
         if (!r || r.freq <= 0 || r.confidence < YIN_CONFIDENCE) return;
         if (r.freq < YIN_MIN_HZ || r.freq > YIN_MAX_HZ) return;
         const midi = freqToMidi(r.freq);
@@ -840,9 +993,12 @@
 
     if (typeof window !== 'undefined' && window.feedBack && typeof window.feedBack.on === 'function') {
         window.feedBack.on('song:ended', () => {
-            if (!_activeInstance || userResults.size === 0) return;
-            const s = computeSummary(_activeInstance._tokens);
-            if (s) lastSummary = s;
+            if (!_activeInstance) return;
+            if (userResults.size > 0) {
+                const s = computeSummary(_activeInstance._tokens);
+                if (s) lastSummary = s;
+            }
+            _finishAnalyticsSession();
             // Finalize the last in-progress syllable into note-detection.
             if (_lastScoredIdx >= 0) { _reportSyllable(_lastScoredIdx); _lastScoredIdx = -1; }
         });
@@ -874,6 +1030,7 @@
         if (resetScore && _activeInstance === inst) {
             resetScoring();
             lastSummary = null;
+            lastAnalytics = null;
             if (micState === 'listening') { _closeNdBinding(); _openNdBinding(micSessionGen); }
         }
     }
@@ -989,6 +1146,15 @@
                 if (!(samples instanceof Float32Array) || samples.length < ringSize) return;
                 // Copy: the engine may hand back a view onto a buffer it reuses.
                 const frame = samples.slice(0, ringSize);
+                let sumSq = 0;
+                let peak = 0;
+                for (let i = 0; i < frame.length; i++) {
+                    const sample = frame[i];
+                    sumSq += sample * sample;
+                    if (Math.abs(sample) > peak) peak = Math.abs(sample);
+                }
+                micInputLevel = Math.sqrt(sumSq / Math.max(1, frame.length));
+                micInputPeak = peak;
                 const at = _scoreClockNow() - (midpointWallSec + latencySec + prefs.micOffsetMs / 1000) * getPlaybackRate();
                 processYinFrame(frame, sampleRate, at, session);
                 updateVoiceMetrics(at);   // bridge path must feed the metrics too (the browser path does)
@@ -1132,8 +1298,14 @@
                 const n = input.length;
                 // Input level (RMS) for the 3D-mode meter.
                 let sumSq = 0;
-                for (let i = 0; i < n; i++) { const s = input[i]; sumSq += s * s; }
+                let peak = 0;
+                for (let i = 0; i < n; i++) {
+                    const s = input[i];
+                    sumSq += s * s;
+                    if (Math.abs(s) > peak) peak = Math.abs(s);
+                }
                 micInputLevel = Math.sqrt(sumSq / Math.max(1, n));
+                micInputPeak = peak;
                 ring.copyWithin(0, n);            // slide left in place
                 ring.set(input, ringSize - n);    // new frame fills the tail
                 ringCount += n;
@@ -1210,6 +1382,7 @@
         micPendingBufferAt = -Infinity;
         micLastCapturedAt = -Infinity;
         micInputLevel = 0;
+        micInputPeak = 0;
         if (!keepFlag) _lsSet(KEY_MIC_ON, '0');
         micState = 'off';
         _refreshMicStrips();
@@ -1223,6 +1396,62 @@
             bg: 'rgba(16,16,24,0.85)', border: '1px solid rgba(160,170,200,0.35)',
             text: '#c8cde1', active: '#e8c040', error: '#f87171',
         };
+    }
+
+    function _analyticsSummaryText() {
+        if (_analyticsLoadError) return _analyticsLoadError;
+        if (!lastAnalytics) return 'Analytics: available after a completed vocal session.';
+        const summary = lastAnalytics.summary;
+        const pitch = summary.pitch;
+        const range = summary.range;
+        const classification = summary.classification;
+        const within25 = pitch.within_25_cents === null ? '—' : Math.round(pitch.within_25_cents * 100) + '%';
+        const mae = pitch.mean_absolute_pitch_error_cents === null ? '—' : Math.round(pitch.mean_absolute_pitch_error_cents) + 'c';
+        const low = range.lowest_reliable_pitch && range.lowest_reliable_pitch.note_name;
+        const high = range.highest_reliable_pitch && range.highest_reliable_pitch.note_name;
+        const rangeText = low && high ? `${low}–${high}` : '—';
+        return `Analytics · ±25c ${within25} · MAE ${mae} · range ${rangeText} · `
+            + `${classification.valid_pitch_frames} valid / ${classification.low_confidence_frames} low-confidence frames`;
+    }
+
+    function _safeBundleName() {
+        const song = (lastAnalytics && lastAnalytics.song) || {};
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const base = `${song.artist || 'Unknown'} - ${song.title || 'Vocal session'} - ${stamp}`;
+        return base.replace(/[\\/:*?"<>|\x00-\x1f]+/g, '_').slice(0, 140);
+    }
+
+    async function _downloadLastAnalytics() {
+        if (!lastAnalytics || !_analyticsLib) return;
+        _analyticsExportStatus = 'Preparing export…';
+        _refreshAnalyticsControls();
+        try {
+            const files = _analyticsLib.buildExportFiles(lastAnalytics);
+            const bundleName = _safeBundleName();
+            const archive = _analyticsLib.createZipArchive(files, bundleName);
+            const blob = new Blob([archive], { type: 'application/zip' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = bundleName + '.zip';
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+            _analyticsExportStatus = 'Export downloaded.';
+        } catch (error) {
+            console.warn('vocals_highway analytics export failed', error);
+            _analyticsExportStatus = 'Export failed: ' + ((error && error.message) || 'unknown error');
+        }
+        _refreshAnalyticsControls();
+    }
+
+    function _refreshAnalyticsControls() {
+        _micStrips.forEach((strip) => {
+            if (strip.analyticsSummary) strip.analyticsSummary.textContent = _analyticsSummaryText();
+            if (strip.analyticsStatus) strip.analyticsStatus.textContent = _analyticsExportStatus;
+            if (strip.exportBtn) strip.exportBtn.disabled = !lastAnalytics || !_analyticsLib;
+        });
     }
 
     function _isV3() {
@@ -1389,6 +1618,58 @@
         offWrap.appendChild(offVal);
         row('Mic timing ms', offWrap);
 
+        const confidenceWrap = document.createElement('span');
+        confidenceWrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        const confidence = document.createElement('input');
+        confidence.type = 'range'; confidence.min = '0.5'; confidence.max = '0.99'; confidence.step = '0.01';
+        confidence.style.cssText = 'width:110px;';
+        const confidenceVal = document.createElement('span');
+        confidenceVal.style.cssText = 'min-width:34px;text-align:right;';
+        confidence.addEventListener('input', () => {
+            _lsSet(KEY_ANALYTICS_CONFIDENCE, confidence.value); _readPrefs();
+            confidenceVal.textContent = prefs.analyticsConfidence.toFixed(2);
+        });
+        confidenceWrap.appendChild(confidence); confidenceWrap.appendChild(confidenceVal);
+        row('Reliable F0 confidence', confidenceWrap);
+
+        const silenceWrap = document.createElement('span');
+        silenceWrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        const silence = document.createElement('input');
+        silence.type = 'range'; silence.min = '0.001'; silence.max = '0.1'; silence.step = '0.001';
+        silence.style.cssText = 'width:110px;';
+        const silenceVal = document.createElement('span');
+        silenceVal.style.cssText = 'min-width:42px;text-align:right;';
+        silence.addEventListener('input', () => {
+            _lsSet(KEY_ANALYTICS_SILENCE, silence.value); _readPrefs();
+            silenceVal.textContent = prefs.analyticsSilenceRms.toFixed(3);
+        });
+        silenceWrap.appendChild(silence); silenceWrap.appendChild(silenceVal);
+        row('Silence RMS', silenceWrap);
+
+        const intervalWrap = document.createElement('span');
+        intervalWrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        const interval = document.createElement('input');
+        interval.type = 'range'; interval.min = '30'; interval.max = '250'; interval.step = '10';
+        interval.style.cssText = 'width:110px;';
+        const intervalVal = document.createElement('span');
+        intervalVal.style.cssText = 'min-width:42px;text-align:right;';
+        interval.addEventListener('input', () => {
+            _lsSet(KEY_ANALYTICS_INTERVAL, interval.value); _readPrefs();
+            intervalVal.textContent = Math.round(prefs.analyticsIntervalMs) + ' ms';
+        });
+        intervalWrap.appendChild(interval); intervalWrap.appendChild(intervalVal);
+        row('Contour resolution', intervalWrap);
+
+        const analyticsSummary = document.createElement('div');
+        analyticsSummary.style.cssText = 'margin-top:10px;font-size:11px;line-height:1.4;color:rgba(220,225,240,0.85);max-width:280px;';
+        const exportBtn = document.createElement('button');
+        exportBtn.type = 'button'; exportBtn.textContent = 'Export analytics bundle'; exportBtn.disabled = true;
+        exportBtn.style.cssText = btnCss + 'margin-top:8px;width:100%;';
+        exportBtn.addEventListener('click', _downloadLastAnalytics);
+        const analyticsStatus = document.createElement('div');
+        analyticsStatus.style.cssText = 'margin-top:4px;font-size:11px;color:rgba(220,225,240,0.7);';
+        panel.appendChild(analyticsSummary); panel.appendChild(exportBtn); panel.appendChild(analyticsStatus);
+
         function hydrate() {
             _readPrefs();
             chSel.value = prefs.channel;
@@ -1397,6 +1678,12 @@
             oct.checked = prefs.octaveFree;
             offSlider.value = String(prefs.micOffsetMs);
             offVal.textContent = fmtOff(prefs.micOffsetMs);
+            confidence.value = String(prefs.analyticsConfidence);
+            confidenceVal.textContent = prefs.analyticsConfidence.toFixed(2);
+            silence.value = String(prefs.analyticsSilenceRms);
+            silenceVal.textContent = prefs.analyticsSilenceRms.toFixed(3);
+            interval.value = String(prefs.analyticsIntervalMs);
+            intervalVal.textContent = Math.round(prefs.analyticsIntervalMs) + ' ms';
             leftSel.value = prefs.leftPanel;
             sel.value = _lsGet(KEY_MIC_DEVICE) || '';
             _refreshVoiceSelectors();
@@ -1423,6 +1710,7 @@
         const controls = {
             panel, micBtn, gearBtn, hydrate, reposition: null, close: null, open: null,
             sel, chSel, voiceSel, voiceRow, inputChk, inputRow, deviceRow, channelRow, engineNote,
+            analyticsSummary, analyticsStatus, exportBtn,
         };
         // Dismiss on click-outside / Esc so the panel closes when the plugin-
         // controls flyout does. In v3 the panel is portalled to <body>, so it
@@ -1484,6 +1772,7 @@
             sel: m.sel, voiceSel: m.voiceSel, voiceRow: m.voiceRow,
             inputRow: m.inputRow, inputChk: m.inputChk, deviceRow: m.deviceRow,
             channelRow: m.channelRow, engineNote: m.engineNote,
+            analyticsSummary: m.analyticsSummary, analyticsStatus: m.analyticsStatus, exportBtn: m.exportBtn,
         };
         _micStrips.add(strip);
         _populateDevicePickers();
@@ -1543,6 +1832,7 @@
             sel: m.sel, voiceSel: m.voiceSel, voiceRow: m.voiceRow,
             inputRow: m.inputRow, inputChk: m.inputChk, deviceRow: m.deviceRow,
             channelRow: m.channelRow, engineNote: m.engineNote,
+            analyticsSummary: m.analyticsSummary, analyticsStatus: m.analyticsStatus, exportBtn: m.exportBtn,
         };
         _v3Controls = strip;
         _micStrips.add(strip);
@@ -1646,6 +1936,7 @@
             }
         });
         _refreshInputRows();
+        _refreshAnalyticsControls();
     }
 
     // Show the browser device+channel pickers only when the browser mic is the
@@ -1699,6 +1990,8 @@
             _lines: null,
             _difficulty: null,      // {score, band, factors, detail} for 3D mode
             _dRange: null,          // {midiLo, midiHi, dLo, dHi} diatonic axis cache
+            _songInfo: null,        // copied chart metadata for post-session export
+            _sections: null,        // chart-authored section markers from the render bundle
             _status: 'idle',        // idle | loading | ready | nodata
             _gen: 0,                // invalidates in-flight fetches on song change / destroy
 
@@ -1715,6 +2008,8 @@
                 this._lines = null;
                 this._difficulty = null;
                 this._dRange = null;
+                this._songInfo = null;
+                this._sections = null;
                 this._status = 'idle';
                 // Mic engine: last-init'd instance owns scoring; a drawing
                 // instance takes over if the owner's canvas dies (see draw()).
@@ -1770,6 +2065,8 @@
                 this._lines = null;
                 this._difficulty = null;
                 this._dRange = null;
+                this._songInfo = null;
+                this._sections = null;
                 this._filename = undefined;
                 this._status = 'idle';
             },
@@ -1783,6 +2080,9 @@
                 if (key === 'octaveIndependent') _lsSet(KEY_OCTAVE_FREE, value ? '1' : '0');
                 else if (key === 'tolerance') _lsSet(KEY_TOLERANCE, String(value));
                 else if (key === 'micOffsetMs') _lsSet(KEY_MIC_OFFSET, String(value));
+                else if (key === 'analyticsConfidence') _lsSet(KEY_ANALYTICS_CONFIDENCE, String(value));
+                else if (key === 'analyticsSilenceRms') _lsSet(KEY_ANALYTICS_SILENCE, String(value));
+                else if (key === 'analyticsIntervalMs') _lsSet(KEY_ANALYTICS_INTERVAL, String(value));
                 _readPrefs();
             },
 
@@ -1790,6 +2090,9 @@
                 if (key === 'octaveIndependent') return prefs.octaveFree;
                 if (key === 'tolerance') return prefs.tolerance;
                 if (key === 'micOffsetMs') return prefs.micOffsetMs;
+                if (key === 'analyticsConfidence') return prefs.analyticsConfidence;
+                if (key === 'analyticsSilenceRms') return prefs.analyticsSilenceRms;
+                if (key === 'analyticsIntervalMs') return prefs.analyticsIntervalMs;
                 return undefined;
             },
 
@@ -1803,6 +2106,7 @@
                 this._difficulty = null;
                 this._dRange = null;
                 if (_activeInstance === this) { resetScoring(); lastSummary = null; }
+                if (_activeInstance === this) lastAnalytics = null;
                 this._autoStarted = false;
                 const gen = ++this._gen;
 
@@ -1856,6 +2160,8 @@
                 // off the active instance's last drawn time).
                 this._lastTime = bundle.currentTime || 0;
                 this._lastTimeWallAt = _wallNow();
+                this._songInfo = Object.assign({}, bundle.songInfo || {});
+                this._sections = Array.isArray(bundle.sections) ? bundle.sections.slice() : [];
 
                 // Mic-engine ownership: normally the last-init'd instance owns
                 // scoring, but if that instance's canvas has left the DOM or
@@ -2108,8 +2414,13 @@
                 // ── End-of-song summary card ──────────────────────────────
                 if (lastSummary) {
                     const s = lastSummary;
-                    const line1 = 'Vocals — ' + Math.round(s.accuracy * 100) + '%';
+                    const line1 = s.accuracy === null ? 'Vocals analytics'
+                        : 'Vocals — ' + Math.round(s.accuracy * 100) + '%';
                     const line2 = s.hits + '/' + s.pitched + ' syllables · best streak ' + s.bestStreak;
+                    const ap = lastAnalytics && lastAnalytics.summary.pitch;
+                    const line3 = ap
+                        ? `Reliable F0: ±25c ${ap.within_25_cents === null ? '—' : Math.round(ap.within_25_cents * 100) + '%'} · MAE ${ap.mean_absolute_pitch_error_cents === null ? '—' : Math.round(ap.mean_absolute_pitch_error_cents) + 'c'}`
+                        : 'Objective analytics unavailable';
                     const f1 = Math.max(18, Math.round(30 * u));
                     const f2 = Math.max(12, Math.round(16 * u));
                     ctx.textAlign = 'center';
@@ -2117,19 +2428,21 @@
                     ctx.font = 'bold ' + f1 + 'px sans-serif';
                     const w1 = ctx.measureText(line1).width;
                     ctx.font = f2 + 'px sans-serif';
-                    const w2 = ctx.measureText(line2).width;
+                    const w2 = Math.max(ctx.measureText(line2).width, ctx.measureText(line3).width);
                     const cardW = Math.max(w1, w2) + 48 * u;
-                    const cardH = f1 + f2 + 40 * u;
+                    const cardH = f1 + f2 * 2 + 48 * u;
                     const cx2 = W / 2;
                     const cy2 = H / 2;
                     ctx.fillStyle = 'rgba(12,12,20,0.9)';
                     this._roundRect(ctx, cx2 - cardW / 2, cy2 - cardH / 2, cardW, cardH, 10 * u);
                     ctx.fillStyle = COL_BAR_ACTIVE;
                     ctx.font = 'bold ' + f1 + 'px sans-serif';
-                    ctx.fillText(line1, cx2, cy2 - f2 / 2 - 4 * u);
+                    ctx.fillText(line1, cx2, cy2 - f2 - 5 * u);
                     ctx.fillStyle = COL_TEXT;
                     ctx.font = f2 + 'px sans-serif';
-                    ctx.fillText(line2, cx2, cy2 + f1 / 2 + 2 * u);
+                    ctx.fillText(line2, cx2, cy2 + 2 * u);
+                    ctx.fillStyle = COL_AMBER;
+                    ctx.fillText(line3, cx2, cy2 + f2 + 7 * u);
                 }
             },
 
@@ -2860,9 +3173,13 @@
 
             _drawSummaryCard(ctx, ribbonW, H, u) {
                 const s = lastSummary;
-                const line1 = 'Vocals — ' + Math.round(s.accuracy * 100) + '%';
+                const line1 = s.accuracy === null ? 'Vocals analytics'
+                    : 'Vocals — ' + Math.round(s.accuracy * 100) + '%';
                 const line2 = s.hits + '/' + s.pitched + ' syllables · best streak ' + s.bestStreak;
-                const line3 = 'Score ' + (s.score || 0).toLocaleString();
+                const ap = lastAnalytics && lastAnalytics.summary.pitch;
+                const line3 = ap
+                    ? `Reliable F0: ±25c ${ap.within_25_cents === null ? '—' : Math.round(ap.within_25_cents * 100) + '%'} · MAE ${ap.mean_absolute_pitch_error_cents === null ? '—' : Math.round(ap.mean_absolute_pitch_error_cents) + 'c'}`
+                    : 'Score ' + (s.score || 0).toLocaleString();
                 const f1 = Math.max(18, Math.round(30 * u));
                 const f2 = Math.max(12, Math.round(16 * u));
                 ctx.textAlign = 'center';
@@ -3041,6 +3358,12 @@
                     micInputLevel,
                     historyLen: pitchHistory.length,
                     summary: lastSummary,
+                    analytics: lastAnalytics ? {
+                        frameCount: lastAnalytics.collection.frame_count,
+                        pitch: lastAnalytics.summary.pitch,
+                        classification: lastAnalytics.summary.classification,
+                    } : null,
+                    analyticsFramesInProgress: _analyticsCollector ? _analyticsCollector.frames.length : 0,
                     prefs: { ...prefs },
                     songNow: _songNow(),
                     lastCapturedAt: micLastCapturedAt,

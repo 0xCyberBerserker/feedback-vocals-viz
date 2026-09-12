@@ -1,7 +1,7 @@
 {
   "id": "vocals_highway",
   "name": "Karaoke Highway",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "feedback_target": "0.3.0-alpha.1",
   "private": false,
   "type": "visualization",
@@ -52,6 +52,33 @@
           "min": -1000,
           "max": 1000,
           "step": 5
+        },
+        {
+          "key": "analyticsConfidence",
+          "label": "Reliable F0 confidence",
+          "type": "range",
+          "default": 0.8,
+          "min": 0.5,
+          "max": 0.99,
+          "step": 0.01
+        },
+        {
+          "key": "analyticsSilenceRms",
+          "label": "Analytics silence RMS",
+          "type": "range",
+          "default": 0.01,
+          "min": 0.001,
+          "max": 0.1,
+          "step": 0.001
+        },
+        {
+          "key": "analyticsIntervalMs",
+          "label": "Pitch contour resolution (ms)",
+          "type": "range",
+          "default": 50,
+          "min": 30,
+          "max": 250,
+          "step": 10
         }
       ]
     },

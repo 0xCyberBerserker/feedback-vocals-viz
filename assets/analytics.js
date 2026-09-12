@@ -95,12 +95,12 @@
         return {
             sample_basis: 'reliable_pitched_frames',
             sample_count: errors.length,
-            mean_error_cents: round(mean(errors)),
-            median_error_cents: round(percentile(errors, 0.5)),
-            mean_absolute_error_cents: round(mean(absolute)),
-            median_absolute_error_cents: round(percentile(absolute, 0.5)),
-            stddev_cents: round(standardDeviation(errors)),
-            rms_error_cents: round(rootMeanSquare(errors)),
+            mean_pitch_error_cents: round(mean(errors)),
+            median_pitch_error_cents: round(percentile(errors, 0.5)),
+            mean_absolute_pitch_error_cents: round(mean(absolute)),
+            median_absolute_pitch_error_cents: round(percentile(absolute, 0.5)),
+            pitch_error_stddev_cents: round(standardDeviation(errors)),
+            rms_pitch_error_cents: round(rootMeanSquare(errors)),
             within_10_cents: round(within(10)),
             within_25_cents: round(within(25)),
             within_50_cents: round(within(50)),
@@ -263,7 +263,8 @@
 
     function classifyFrame(frame, options) {
         if (!finite(frame.rms) || frame.rms < options.silenceRms) return CLASSIFICATIONS.SILENCE;
-        const hasPitch = finite(frame.rawFrequencyHz) && frame.rawFrequencyHz > 0;
+        const hasPitch = frame.pitchValid !== false
+            && finite(frame.rawFrequencyHz) && frame.rawFrequencyHz > 0;
         if (frame.targetActive) {
             if (hasPitch && finite(frame.confidence) && frame.confidence >= options.confidenceThreshold) {
                 return CLASSIFICATIONS.PITCHED;
@@ -341,7 +342,7 @@
         };
     }
 
-    function noteMetrics(tokens, frames, options, pluginResults) {
+    function noteMetrics(tokens, frames, options, pluginResults, phrases, sections) {
         return tokens.map((token, index) => {
             if (!finite(token.midi)) return null;
             const direct = frames.filter((frame) => frame.syllable_index === index);
@@ -363,8 +364,11 @@
                 index,
                 lyrics: String(token.w || '').replace(/[+-]$/, ''),
                 syllable: String(token.w || ''),
-                phrase_index: direct.length ? direct[0].phrase_index : null,
-                section_index: direct.length ? direct[0].section_index : null,
+                phrase_index: (() => {
+                    const phrase = phrases.find((item) => item.token_indices.includes(index));
+                    return phrase ? phrase.index : null;
+                })(),
+                section_index: indexAtTime(sections, Math.round(token.t * 1000)),
                 target: {
                     pitch_name: midiToName(token.midi),
                     midi: nullable(token.midi),
@@ -441,7 +445,7 @@
             : tokens.length ? Math.round(Math.max(...tokens.map((token) => token.t + token.d)) * 1000) : 0;
         const phrases = input.phrases || buildPhrases(tokens);
         const sections = normalizeSections(input.sections || [], durationMs);
-        const notes = noteMetrics(tokens, frames, options, input.pluginResults || null);
+        const notes = noteMetrics(tokens, frames, options, input.pluginResults || null, phrases, sections);
         const phraseRows = phrases.map((phrase) => aggregateGroup(phrase, notes, frames, options, 'phrase'));
         const sectionRows = sections.map((section) => aggregateGroup(section, notes, frames, options, 'section'));
         const timingNotes = notes.filter((note) => finite(note.timing.onset_error_ms));
@@ -501,6 +505,10 @@
             this.metadata = config.metadata || {};
             this.tokens = Array.isArray(config.tokens) ? config.tokens : [];
             this.phrases = buildPhrases(this.tokens);
+            this.tokenPhraseIndices = new Map();
+            this.phrases.forEach((phrase) => {
+                phrase.token_indices.forEach((tokenIndex) => this.tokenPhraseIndices.set(tokenIndex, phrase.index));
+            });
             const durationMs = this.tokens.length
                 ? Math.round(Math.max(...this.tokens.map((token) => token.t + token.d)) * 1000) : 0;
             this.sections = normalizeSections(config.sections || [], durationMs);
@@ -534,9 +542,10 @@
                 rawFrequencyHz: rawFrequency,
                 confidence: input.confidence,
                 targetActive: !!token,
+                pitchValid: input.pitchValid,
             }, this.options);
             const phraseIndex = syllableIndex === null ? indexAtTime(this.phrases, timestampMs)
-                : this.phrases.findIndex((phrase) => phrase.token_indices.includes(syllableIndex));
+                : this.tokenPhraseIndices.get(syllableIndex);
             const sectionIndex = indexAtTime(this.sections, timestampMs);
             this.frames.push({
                 timestamp_ms: timestampMs,
@@ -559,7 +568,7 @@
                 rms: round(input.rms),
                 peak: round(input.peak),
                 syllable_index: syllableIndex,
-                phrase_index: phraseIndex >= 0 ? phraseIndex : null,
+                phrase_index: Number.isInteger(phraseIndex) ? phraseIndex : null,
                 section_index: sectionIndex,
                 classification,
                 steadiness: round(input.steadiness),
@@ -619,9 +628,9 @@
             median_frequency_hz: note.performance.median_frequency_hz,
             detected_note: note.performance.detected_note,
             mean_confidence: note.performance.mean_confidence,
-            mean_pitch_error_cents: note.pitch.mean_error_cents,
-            mean_absolute_pitch_error_cents: note.pitch.mean_absolute_error_cents,
-            pitch_stddev_cents: note.pitch.stddev_cents,
+            mean_pitch_error_cents: note.pitch.mean_pitch_error_cents,
+            mean_absolute_pitch_error_cents: note.pitch.mean_absolute_pitch_error_cents,
+            pitch_stddev_cents: note.pitch.pitch_error_stddev_cents,
             onset_error_ms: note.timing.onset_error_ms,
             offset_error_ms: note.timing.offset_error_ms,
             performed_duration_ms: note.timing.performed_duration_ms,
@@ -647,9 +656,9 @@
             start_ms: group.start_ms,
             end_ms: group.end_ms,
             note_count: group.note_count,
-            mean_absolute_pitch_error_cents: group.pitch.mean_absolute_error_cents,
-            median_absolute_pitch_error_cents: group.pitch.median_absolute_error_cents,
-            pitch_stddev_cents: group.pitch.stddev_cents,
+            mean_absolute_pitch_error_cents: group.pitch.mean_absolute_pitch_error_cents,
+            median_absolute_pitch_error_cents: group.pitch.median_absolute_pitch_error_cents,
+            pitch_stddev_cents: group.pitch.pitch_error_stddev_cents,
             within_10_cents: group.pitch.within_10_cents,
             within_25_cents: group.pitch.within_25_cents,
             within_50_cents: group.pitch.within_50_cents,
@@ -742,6 +751,100 @@
         };
     }
 
+    function crc32(bytes) {
+        let crc = 0xffffffff;
+        for (const byte of bytes) {
+            crc ^= byte;
+            for (let bit = 0; bit < 8; bit++) {
+                crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+            }
+        }
+        return (crc ^ 0xffffffff) >>> 0;
+    }
+
+    function zipDate(date) {
+        const year = Math.max(1980, date.getFullYear());
+        return {
+            time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+            date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+        };
+    }
+
+    function concatBytes(parts) {
+        const size = parts.reduce((sum, part) => sum + part.length, 0);
+        const result = new Uint8Array(size);
+        let offset = 0;
+        for (const part of parts) { result.set(part, offset); offset += part.length; }
+        return result;
+    }
+
+    function zipHeader(size) {
+        const bytes = new Uint8Array(size);
+        return { bytes, view: new DataView(bytes.buffer) };
+    }
+
+    // Dependency-free ZIP STORE writer. The browser receives one Blob locally;
+    // no analytics payload is posted to the plugin backend or any other API.
+    function createZipArchive(files, rootName, modifiedAt) {
+        const encoder = new TextEncoder();
+        const root = String(rootName || 'vocal-analysis')
+            .replace(/[\\/:*?"<>|\x00-\x1f]+/g, '_').replace(/^[ .]+|[ .]+$/g, '').slice(0, 140)
+            || 'vocal-analysis';
+        const entries = Object.entries(files || {});
+        if (!entries.length || entries.length > 16) throw new Error('Invalid export file count');
+        let total = 0;
+        const stamp = zipDate(modifiedAt instanceof Date ? modifiedAt : new Date());
+        const localParts = [];
+        const centralParts = [];
+        let localOffset = 0;
+        for (const [fileName, text] of entries) {
+            if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(fileName) || typeof text !== 'string') {
+                throw new Error('Invalid export file');
+            }
+            const name = encoder.encode(`${root}/${fileName}`);
+            const data = encoder.encode(text);
+            total += data.length;
+            if (total > 32 * 1024 * 1024) throw new Error('Export exceeds 32 MiB');
+            const checksum = crc32(data);
+            const local = zipHeader(30);
+            local.view.setUint32(0, 0x04034b50, true);
+            local.view.setUint16(4, 20, true);
+            local.view.setUint16(6, 0x0800, true);
+            local.view.setUint16(8, 0, true);
+            local.view.setUint16(10, stamp.time, true);
+            local.view.setUint16(12, stamp.date, true);
+            local.view.setUint32(14, checksum, true);
+            local.view.setUint32(18, data.length, true);
+            local.view.setUint32(22, data.length, true);
+            local.view.setUint16(26, name.length, true);
+            localParts.push(local.bytes, name, data);
+
+            const central = zipHeader(46);
+            central.view.setUint32(0, 0x02014b50, true);
+            central.view.setUint16(4, 20, true);
+            central.view.setUint16(6, 20, true);
+            central.view.setUint16(8, 0x0800, true);
+            central.view.setUint16(10, 0, true);
+            central.view.setUint16(12, stamp.time, true);
+            central.view.setUint16(14, stamp.date, true);
+            central.view.setUint32(16, checksum, true);
+            central.view.setUint32(20, data.length, true);
+            central.view.setUint32(24, data.length, true);
+            central.view.setUint16(28, name.length, true);
+            central.view.setUint32(42, localOffset, true);
+            centralParts.push(central.bytes, name);
+            localOffset += local.bytes.length + name.length + data.length;
+        }
+        const centralBytes = concatBytes(centralParts);
+        const end = zipHeader(22);
+        end.view.setUint32(0, 0x06054b50, true);
+        end.view.setUint16(8, entries.length, true);
+        end.view.setUint16(10, entries.length, true);
+        end.view.setUint32(12, centralBytes.length, true);
+        end.view.setUint32(16, localOffset, true);
+        return concatBytes([...localParts, centralBytes, end.bytes]);
+    }
+
     return {
         SCHEMA,
         SCHEMA_VERSION,
@@ -750,6 +853,7 @@
         TelemetryCollector,
         analyzeSession,
         buildExportFiles,
+        createZipArchive,
         buildPhrases,
         centsError,
         classifyFrame,

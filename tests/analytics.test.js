@@ -8,6 +8,7 @@ const {
     analyzeSession,
     buildExportFiles,
     centsError,
+    createZipArchive,
     midiToFrequency,
     pitchMetrics,
     rangeMetrics,
@@ -31,9 +32,9 @@ test('absolute pitch error cannot cancel opposite signed errors', () => {
         pitch_error_cents: error,
     }));
     const metrics = pitchMetrics(frames);
-    assert.equal(metrics.mean_error_cents, 0);
-    assert.equal(metrics.mean_absolute_error_cents, 40);
-    assert.equal(metrics.rms_error_cents, 40);
+    assert.equal(metrics.mean_pitch_error_cents, 0);
+    assert.equal(metrics.mean_absolute_pitch_error_cents, 40);
+    assert.equal(metrics.rms_pitch_error_cents, 40);
 });
 
 test('low-confidence and silence frames remain visible but do not affect strict pitch metrics', () => {
@@ -49,7 +50,7 @@ test('low-confidence and silence frames remain visible but do not affect strict 
         'PITCHED', 'HARSH_LOW_CONFIDENCE', 'SILENCE',
     ]);
     assert.equal(analysis.summary.pitch.sample_count, 1);
-    assert.equal(analysis.summary.pitch.mean_absolute_error_cents, 0);
+    assert.equal(analysis.summary.pitch.mean_absolute_pitch_error_cents, 0);
     assert.equal(analysis.summary.classification.low_confidence_frames, 1);
 });
 
@@ -174,4 +175,30 @@ test('serialization emits all required files and preserves Unicode', () => {
     assert.match(files['notes.csv'], /corazón/);
     assert.match(files['sections.csv'], /Estribillo ñ/);
     JSON.parse(files['session.json']);
+});
+
+test('client-side ZIP contains only the local schema files with UTF-8 paths', () => {
+    const files = {
+        'session.json': '{"artist":"Björk"}\n',
+        'notes.csv': 'lyrics\ncorazón\n',
+    };
+    const archive = createZipArchive(files, '../Björk: sesión', new Date('2026-09-12T10:00:00Z'));
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    const decoder = new TextDecoder();
+    let offset = 0;
+    const extracted = {};
+    while (view.getUint32(offset, true) === 0x04034b50) {
+        const size = view.getUint32(offset + 18, true);
+        const nameLength = view.getUint16(offset + 26, true);
+        const nameStart = offset + 30;
+        const name = decoder.decode(archive.subarray(nameStart, nameStart + nameLength));
+        const dataStart = nameStart + nameLength;
+        extracted[name] = decoder.decode(archive.subarray(dataStart, dataStart + size));
+        offset = dataStart + size;
+    }
+    assert.deepEqual(extracted, {
+        '_Björk_ sesión/session.json': files['session.json'],
+        '_Björk_ sesión/notes.csv': files['notes.csv'],
+    });
+    assert.equal(view.getUint32(offset, true), 0x02014b50);
 });
