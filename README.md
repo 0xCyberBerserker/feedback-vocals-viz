@@ -32,6 +32,9 @@ detection and per-syllable scoring.
   syllable to syllable as you sing; during instrumental gaps it bounces under a get-ready
   countdown to the next line.
 - **End-of-song summary** — overall accuracy, syllables hit, and best streak.
+- **Objective analytics export** — reliable-F0 pitch error and accuracy bands, timing, robust range/tessitura, sustain drift, existing steadiness/vibrato estimates, dynamics, and phrase/section aggregates. Low-confidence distorted-vocal frames remain visible but do not count as intonation failures. Export is a local schema-v1 JSON/CSV ZIP; see the [bilingual schema reference](docs/analytics-schema.md).
+
+**Español:** la exportación de analítica objetiva conserva los frames de F0 poco fiable sin contarlos como fallos de afinación y genera localmente un ZIP JSON/CSV. Métodos, unidades y límites están documentados en la [referencia bilingüe](docs/analytics-schema.md).
 - **Mic settings** (gear button on the highway) — input device picker (independent of
   your instrument input), capture channel select for multi-input interfaces, pitch
   tolerance, octave-free matching for singing in whatever octave fits your voice, and
@@ -129,6 +132,8 @@ pip install pytest pyyaml jsonschema
 pytest tests/ -v          # content-free: fixtures are synthesized on the fly
 node --check screen.js    # renderer syntax gate (same as CI)
 node --test tests/difficulty.test.js         # difficulty estimator unit tests
+node --test tests/analytics.test.js          # objective analytics + serialization
+node tools/build_synthetic_export.js         # regenerate the content-free example
 python tools/build_test_pak.py --validate   # build + spec-validate (needs a feedpak-spec checkout)
 ```
 

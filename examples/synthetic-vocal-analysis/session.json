@@ -1,0 +1,149 @@
+{
+  "schema": "feedback-vocals-viz-analytics",
+  "schema_version": 1,
+  "generated_at": "2026-09-12T10:00:06.000Z",
+  "plugin": {
+    "id": "vocals_highway",
+    "version": "0.5.0",
+    "detector": "YIN",
+    "local_only": true
+  },
+  "song": {
+    "artist": "Synthetic Ensemble",
+    "title": "Objective Exercise Ñ",
+    "chart_id": "synthetic-objective-v1",
+    "arrangement": "Vocals",
+    "transposition_semitones": 0
+  },
+  "voice": {
+    "id": "lead",
+    "name": "Synthetic lead"
+  },
+  "settings": {
+    "confidence_threshold": 0.8,
+    "silence_rms_threshold": 0.01,
+    "contour_interval_ms": 50,
+    "timing_window_ms": 300,
+    "sustain_minimum_ms": 700,
+    "octave_normalization": "none"
+  },
+  "collection": {
+    "frame_count": 121,
+    "dropped_by_capacity": 0,
+    "approximate_memory_bytes": 65594
+  },
+  "summary": {
+    "pitch": {
+      "sample_basis": "reliable_pitched_frames",
+      "sample_count": 77,
+      "mean_pitch_error_cents": -1.363636,
+      "median_pitch_error_cents": 3,
+      "mean_absolute_pitch_error_cents": 9.798402,
+      "median_absolute_pitch_error_cents": 7.75,
+      "pitch_error_stddev_cents": 12.133149,
+      "rms_pitch_error_cents": 12.209538,
+      "within_10_cents": 0.545455,
+      "within_25_cents": 0.987013,
+      "within_50_cents": 1,
+      "within_100_cents": 1
+    },
+    "timing": {
+      "sign_convention": "positive=late; negative=early",
+      "note_count": 4,
+      "mean_onset_error_ms": 0,
+      "median_onset_error_ms": 0,
+      "mean_offset_error_ms": -37.5,
+      "median_offset_error_ms": -50
+    },
+    "range": {
+      "method": "reliable pitched frames; P05-P95 robust range; P10-P90 effective tessitura",
+      "observed_low": {
+        "midi": 60.03,
+        "note_name": "C4",
+        "frequency_hz": 262.079321
+      },
+      "observed_high": {
+        "midi": 65.288718,
+        "note_name": "F4",
+        "frequency_hz": 355.101148
+      },
+      "lowest_reliable_pitch": {
+        "midi": 60.03,
+        "note_name": "C4",
+        "frequency_hz": 262.079321
+      },
+      "highest_reliable_pitch": {
+        "midi": 65.159998,
+        "note_name": "F4",
+        "frequency_hz": 352.470697
+      },
+      "pitch_p05": {
+        "midi": 60.03,
+        "note_name": "C4",
+        "frequency_hz": 262.079321
+      },
+      "pitch_p10": {
+        "midi": 60.03,
+        "note_name": "C4",
+        "frequency_hz": 262.079321
+      },
+      "pitch_p25": {
+        "midi": 60.03,
+        "note_name": "C4",
+        "frequency_hz": 262.079321
+      },
+      "pitch_median": {
+        "midi": 62.1825,
+        "note_name": "D4",
+        "frequency_hz": 296.776843
+      },
+      "pitch_p75": {
+        "midi": 64.840828,
+        "note_name": "F4",
+        "frequency_hz": 346.032095
+      },
+      "pitch_p90": {
+        "midi": 65.038534,
+        "note_name": "F4",
+        "frequency_hz": 350.006413
+      },
+      "pitch_p95": {
+        "midi": 65.159998,
+        "note_name": "F4",
+        "frequency_hz": 352.470697
+      },
+      "effective_tessitura_low": {
+        "midi": 60.03,
+        "note_name": "C4",
+        "frequency_hz": 262.079321
+      },
+      "effective_tessitura_high": {
+        "midi": 65.038534,
+        "note_name": "F4",
+        "frequency_hz": 350.006413
+      }
+    },
+    "classification": {
+      "sample_basis": "frames_during_charted_vocal_units",
+      "target_frames": 85,
+      "valid_pitch_frames": 77,
+      "low_confidence_frames": 8,
+      "unpitched_frames": 0,
+      "silence_frames": 0,
+      "unknown_frames": 0,
+      "pitched_ratio": 0.905882,
+      "low_confidence_ratio": 0.094118,
+      "unpitched_ratio": 0,
+      "silence_ratio": 0,
+      "unknown_ratio": 0,
+      "outside_target_frames": 36
+    },
+    "dynamics": {
+      "rms_mean": 0.067702,
+      "rms_median": 0.09,
+      "rms_p95": 0.11,
+      "peak_amplitude": 0.198,
+      "dynamic_range_db": 2.766054
+    }
+  }
+}
