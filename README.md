@@ -2,6 +2,8 @@
 
 <img src="docs/analytics-banner.webp" width="100%" alt="Microphone signal becoming a measured pitch contour and portable analytics data">
 
+<p align="center"><sub>Concept artwork for this fork — not a runtime screenshot. / Arte conceptual de este fork; no es una captura de ejecución.</sub></p>
+
 <p align="center">
   <strong>Realtime vocal visualization. Objective analytics. Portable evidence.</strong><br>
   Visualización vocal en tiempo real. Analítica objetiva. Evidencia portable.
@@ -26,6 +28,11 @@ detection and per-syllable scoring.
 
 ![Karaoke Highway — a pitch-ribbon highway with the singer's live white trace over the upcoming target notes, green/amber per-syllable accuracy fills, and a lyric line with a bouncing ball below](docs/hero.png)
 
+> **Image provenance / Procedencia:** `hero.png` and the gallery PNGs are unchanged
+> assets inherited from upstream v0.4.1 (`d83af3a`). Their visible controls and states
+> are consistent with that source revision, but this fork has not independently
+> reproduced their original runtime sessions. They do not show the v0.5 analytics UI.
+
 ## The idea / La idea
 
 ### English
@@ -38,9 +45,9 @@ detector or an opaque coach.
 The boundary is simple: **measure → aggregate → export**. Reliable pitched frames feed
 strict intonation metrics. Low-confidence, unpitched, and silent frames remain visible
 without being mislabeled as bad singing—particularly important for rasp, grit, screams,
-growls, and other phonations where F0 estimation may fail. At song end, the plugin creates
-a local, documented JSON/CSV bundle that can be inspected without FeedBack and interpreted
-later by a human analyst.
+growls, and other phonations where F0 estimation may fail. At song end, the plugin aggregates
+the session; the explicit Export action then creates a local, documented JSON/CSV bundle that
+can be inspected without FeedBack and interpreted later by a human analyst.
 
 ### Español
 
@@ -53,12 +60,13 @@ El límite es claro: **medir → agregar → exportar**. Sólo los frames de ton
 las métricas estrictas de afinación. Los frames de baja confianza, sin tono o en silencio
 permanecen visibles sin convertirse en fallos de canto; esto es especialmente importante
 con rasp, grit, screams, growls y otras fonaciones donde F0 puede fallar. Al terminar la
-canción se genera localmente un bundle JSON/CSV documentado, independiente de FeedBack y
-preparado para que un analista humano lo interprete después.
+canción se agregan las métricas; la acción Export genera después un bundle JSON/CSV local,
+documentado, independiente de FeedBack y preparado para un analista humano.
 
-See [design rationale](docs/design-rationale.md) and the
-[schema reference](docs/analytics-schema.md) for architectural boundaries, formulas,
-and known limitations.
+See [design rationale](docs/design-rationale.md), the
+[schema reference](docs/analytics-schema.md), and the dated
+[evidence audit](docs/evidence-audit.md) for architectural boundaries, formulas,
+provenance, verification status, and known limitations.
 
 ## Features
 
@@ -85,7 +93,7 @@ and known limitations.
   syllable to syllable as you sing; during instrumental gaps it bounces under a get-ready
   countdown to the next line.
 - **End-of-song summary** — overall accuracy, syllables hit, and best streak.
-- **Objective analytics export** — reliable-F0 pitch error and accuracy bands, timing, robust range/tessitura, sustain drift, existing steadiness/vibrato estimates, dynamics, and phrase/section aggregates. Low-confidence distorted-vocal frames remain visible but do not count as intonation failures. Export is a local schema-v1 JSON/CSV ZIP; see the [bilingual schema reference](docs/analytics-schema.md).
+- **Objective analytics export** — reliable-F0 pitch error and accuracy bands, timing, robust range/tessitura, sustain drift, existing steadiness/vibrato estimates, dynamics, and phrase/section aggregates. Low-confidence frames—including distorted-vocal regions where YIN is unreliable—remain visible but do not count as intonation failures. Export is a local schema-v1 JSON/CSV ZIP; see the [bilingual schema reference](docs/analytics-schema.md).
 
 - **Mic settings** (gear button on the highway) — input device picker (independent of
   your instrument input), capture channel select for multi-input interfaces, pitch
@@ -95,7 +103,7 @@ and known limitations.
 - **Splitscreen ready** — each panel gets its own renderer; mic scoring follows the
   vocals panel, so a guitarist and a singer can share one screen.
 
-## Gallery
+## Upstream v0.4.1 gallery
 
 **Fixed pitch tuner.** The note nearest your voice lights up (here G3, 4¢ sharp), riding
 up for sharp / down for flat — the same one-octave reference every song.
@@ -120,15 +128,18 @@ bouncing ball cue you into the next line.
 
 ![Summary card reading Vocals 53 percent, 9 of 16 syllables, best streak 4, score 903](docs/summary.png)
 
-**Settings.** The mic/controls flyout: choose the Left bar (Absolute scale / Voice
-technique / Off), which duet part you sing, pitch tolerance, octave-free matching, and
-mic timing calibration.
+**Settings.** Upstream v0.4.1 image of the mic/controls flyout: choose the Left bar
+(Absolute scale / Voice technique / Off), duet part, pitch tolerance, octave-free
+matching, and mic timing calibration. The analytics controls added in v0.5 are not
+shown in this inherited image.
 
 ![The plugin-controls flyout with the Vocal Mic settings panel open: mic device, capture channel, duet voice, left bar, tolerance, octave-free, and mic timing rows](docs/settings.png)
 
 ## Requirements
 
-- FeedBack **0.3.0-alpha.1** or later.
+- FeedBack target **0.3.0-alpha.1**, as declared by `plugin.json`. Automated contract
+  validation passes against the inspected current core; an independently documented
+  live-microphone acceptance run for this fork remains pending.
 - Song content: a feedpak whose Vocals arrangement carries `notation`, plus `lyrics`
   and `vocal_pitch` side-files
   ([feedpak-spec](https://github.com/got-feedback/feedpak-spec) v1.14, §7.1/§7.2).
@@ -155,8 +166,8 @@ if the checkout has local commits or uncommitted changes.
 
 Restart FeedBack after either method. Open a song with a Vocals arrangement — with the
 picker on *Auto* the ribbon selects itself; otherwise pick **Karaoke Highway** manually.
-Click 🎤 on the highway to start mic scoring (your browser/app will ask for microphone
-permission once).
+Click 🎤 on the highway to start mic scoring (your browser/app requests microphone
+permission when required by its permission policy).
 
 ## Settings
 
@@ -164,7 +175,8 @@ Everything lives in the gear popover next to the mic button, persisted in
 `localStorage` under `vocals_highway.*` keys: mic device, capture channel
 (mix / channel 1 / channel 2), match tolerance in semitones, octave-free
 scoring, the **Left bar** picker (Absolute scale / Voice technique / Off), and
-**Mic timing** (±1000 ms).
+**Mic timing** (±1000 ms). Analytics adds controls for reliable-F0 confidence,
+silence RMS, and pitch-contour interval.
 
 Mic timing is a scoring-only calibration for the hear → sing → capture loop:
 raise it if your hits register late (Bluetooth headphones or wireless mics add
@@ -190,8 +202,9 @@ python tools/build_test_pak.py --validate   # build + spec-validate (needs a fee
 ```
 
 The test paks (a solfège scale with vocals+guitar arrangements, and a 4-instrument
-"band" variant) are generated from code — no copyrighted song content exists in or
-ships with this repository. The `--validate` step and the spec-validation test need a
+"band" variant) are generated from code and contain no commercial audio or chart data.
+The inherited gallery PNGs do contain visible song titles and short lyric fragments;
+no corresponding audio or chart bundles are shipped. The `--validate` step and the spec-validation test need a
 [feedpak-spec](https://github.com/got-feedback/feedpak-spec) checkout: by default they
 look for one as a sibling directory (`../feedpak-spec`), or set `FEEDPAK_SPEC_DIR` to
 point elsewhere. CI pins `v1.14.0`.
@@ -200,10 +213,11 @@ See [CLAUDE.md](CLAUDE.md) for an architecture map and contributor/agent notes.
 
 ## AI disclosure, warranty, and contributions
 
-**This plugin was built with heavy use of AI coding tools.** The large majority of
-the code was written by an AI assistant working under human direction, with human
-review and hands-on testing against a real FeedBack install — but you should read it
-with the same skepticism you'd apply to any code of unknown provenance.
+**This codebase was developed with heavy use of AI coding tools.** The upstream README
+reported human review and hands-on testing against a real FeedBack install. For this
+fork, the analytics extension has deterministic unit, serialization, schema, and
+synthetic-package coverage; a documented live microphone/UI acceptance run is still
+pending. Treat generated code with the same skepticism as any code of unknown provenance.
 
 **There is no warranty.** This is open-source software provided **as-is**, without
 warranty of any kind, express or implied — see sections 15 and 16 of the

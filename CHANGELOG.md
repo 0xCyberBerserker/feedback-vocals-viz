@@ -12,6 +12,10 @@ Los cambios relevantes se documentan aquí siguiendo Keep a Changelog y SemVer.
 
 - Explicitly credit Taynavv as the creator of the original Karaoke Highway plugin.
 - Se acredita explícitamente a Taynavv como creador del plugin Karaoke Highway original.
+- Label concept artwork, inherited upstream captures, synthetic evidence, and pending live acceptance explicitly.
+- Distinguish end-of-song aggregation from the user-triggered export step.
+- Document phrase derivation and replace the misleading heap-memory estimate with serialized UTF-8 size.
+- Se distinguen el arte conceptual, las capturas heredadas, la evidencia sintética y la aceptación live pendiente.
 
 ## 0.5.0 - 2026-09-12
 

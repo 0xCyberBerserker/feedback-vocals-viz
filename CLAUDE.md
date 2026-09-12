@@ -11,9 +11,10 @@ the map for contributors and coding agents.
 |---|---|
 | [plugin.json](plugin.json) | Manifest: viz declaration, capability settings (feedBack#849), `feedback_target` advisory |
 | [screen.js](screen.js) | Frontend: ribbon → token cache → lyric-line builder → existing mic+YIN+scoring singleton → lightweight analytics hook → mic/settings/export DOM → renderer factory → shortcut and headless probe. Node-safe for pure-helper tests. |
-| [assets/analytics.js](assets/analytics.js) | Zero-dependency UMD module: compact classified telemetry, post-session note/phrase/section/session metrics, schema v1, and JSON/CSV/README serialization. It consumes YIN output and performs no DSP or interpretation. |
+| [assets/analytics.js](assets/analytics.js) | Zero-dependency UMD module: compact classified telemetry, post-session note/phrase/section/session metrics, schema v1, and JSON/CSV/README serialization. It consumes YIN output and performs no audio capture or F0 detection. |
 | [routes.py](routes.py) | `GET .../data` merges lyrics + chart pitch into syllable tokens. Analytics never reaches the backend. |
 | [docs/analytics-schema.md](docs/analytics-schema.md) | Bilingual schema, formulas, classification, realtime, and memory contract. |
+| [docs/evidence-audit.md](docs/evidence-audit.md) | Dated claim/provenance audit separating source verification, automated tests, inherited images, synthetic evidence, and pending live acceptance. |
 | [tools/build_test_pak.py](tools/build_test_pak.py) | Synthesizes the content-free test paks (solfège scale; vocals+lead, and a 4-instrument band variant) |
 | [tests/](tests) | pytest: pak invariants + spec validation, routes merge helpers (FastAPI stubbed) |
 

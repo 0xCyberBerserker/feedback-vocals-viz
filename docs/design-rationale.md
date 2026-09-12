@@ -5,7 +5,8 @@
 ### Problem
 
 Karaoke Highway already produced useful realtime vocal evidence, but most of it disappeared
-when the song ended. An external analyst could see the final score or receive an audio file,
+when the song ended. An external analyst could see the final score or receive separately
+recorded audio,
 but could not reproduce how confidence, pitch error, timing, range, or sustain behaviour
 changed throughout the performance.
 
@@ -20,8 +21,8 @@ the existing YIN result, compensated timestamp, target token, RMS, peak, steadin
 estimate. It does not open another microphone, run another pitch detector, or alter the score.
 
 The realtime path performs only lightweight measurements and appends compact frames at a
-configurable interval. Aggregation, JSON/CSV serialization, and ZIP creation happen after the
-song ends.
+configurable interval. Aggregation runs when the song ends; JSON/CSV serialization and ZIP
+creation run only after the user invokes the explicit Export action.
 
 ```text
 existing microphone and YIN
@@ -39,7 +40,7 @@ external human interpretation
 
 ### Evidence policy
 
-- Raw detector output is retained.
+- The raw F0 estimate is retained whenever YIN returns one; raw PCM is not retained.
 - Only `PITCHED` frames above the confidence threshold feed strict pitch metrics.
 - Low-confidence frames remain measurable classification evidence, not singing failures.
 - Missing measurements remain `null` or empty; values are never synthesized for schema symmetry.
@@ -73,7 +74,8 @@ second global history subsystem.
 ### Problema
 
 Karaoke Highway ya producía evidencia vocal útil en tiempo real, pero gran parte desaparecía al
-terminar la canción. Un analista externo podía ver el score final o recibir audio, pero no podía
+terminar la canción. Un analista externo podía ver el score final o recibir audio grabado por
+separado, pero no podía
 reconstruir cómo evolucionaban la confianza, el error de afinación, el timing, el rango o el
 comportamiento de los sostenidos.
 
@@ -88,11 +90,12 @@ el timestamp compensado, el token objetivo, RMS, peak, steadiness y vibrato ya d
 abre otro micrófono, no ejecuta otro detector y no altera el score.
 
 El camino realtime sólo realiza mediciones ligeras y añade frames compactos según un intervalo
-configurable. La agregación, serialización JSON/CSV y creación del ZIP suceden al terminar.
+configurable. La agregación sucede al terminar; JSON/CSV y el ZIP sólo se crean cuando el
+usuario ejecuta la acción explícita Export.
 
 ### Política de evidencia
 
-- Se conserva la salida raw del detector.
+- Se conserva la estimación F0 raw cuando YIN devuelve una; no se conserva PCM raw.
 - Sólo `PITCHED` por encima del umbral participa en métricas estrictas.
 - La baja confianza queda como evidencia de clasificación, no como fallo del cantante.
 - Las medidas ausentes son `null` o vacías; nunca se fabrican valores para completar el esquema.
