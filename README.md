@@ -1,11 +1,58 @@
 # Karaoke Highway
 
+<img src="docs/analytics-banner.webp" width="100%" alt="Microphone signal becoming a measured pitch contour and portable analytics data">
+
+<p align="center">
+  <strong>Realtime vocal visualization. Objective analytics. Portable evidence.</strong><br>
+  Visualización vocal en tiempo real. Analítica objetiva. Evidencia portable.
+</p>
+
+<p align="center">
+  <img alt="Local only" src="https://img.shields.io/badge/ANALYSIS-LOCAL_ONLY-151918?style=for-the-badge&logo=linux&logoColor=ffffff">
+  <img alt="Schema version 1" src="https://img.shields.io/badge/SCHEMA-V1-151918?style=for-the-badge&logo=json&logoColor=8BE9FD">
+  <img alt="AGPL version 3" src="https://img.shields.io/badge/LICENSE-AGPL--3.0-151918?style=for-the-badge&logo=gnu&logoColor=ffffff">
+</p>
+
 A [FeedBack](https://github.com/got-feedback/feedBack) visualization plugin that makes
 **vocals a first-class instrument**: a SingStar-style pitch-ribbon highway that
 auto-selects when a song's active arrangement is Vocals, with live microphone pitch
 detection and per-syllable scoring.
 
 ![Karaoke Highway — a pitch-ribbon highway with the singer's live white trace over the upcoming target notes, green/amber per-syllable accuracy fills, and a lyric line with a bouncing ball below](docs/hero.png)
+
+## The idea / La idea
+
+### English
+
+Realtime vocal feedback already had the difficult part: one microphone path, one YIN
+detector, chart-aware targets, latency compensation, scoring, steadiness, and vibrato.
+The analytics layer deliberately reuses that evidence instead of creating a competing
+detector or an opaque coach.
+
+The boundary is simple: **measure → aggregate → export**. Reliable pitched frames feed
+strict intonation metrics. Low-confidence, unpitched, and silent frames remain visible
+without being mislabeled as bad singing—particularly important for rasp, grit, screams,
+growls, and other phonations where F0 estimation may fail. At song end, the plugin creates
+a local, documented JSON/CSV bundle that can be inspected without FeedBack and interpreted
+later by a human analyst.
+
+### Español
+
+El feedback vocal en tiempo real ya contenía la parte difícil: una captura de micrófono,
+un detector YIN, objetivos procedentes del chart, compensación de latencia, scoring,
+steadiness y vibrato. La capa de analítica reutiliza esa evidencia en lugar de crear un
+detector paralelo o un coach opaco.
+
+El límite es claro: **medir → agregar → exportar**. Sólo los frames de tono fiable alimentan
+las métricas estrictas de afinación. Los frames de baja confianza, sin tono o en silencio
+permanecen visibles sin convertirse en fallos de canto; esto es especialmente importante
+con rasp, grit, screams, growls y otras fonaciones donde F0 puede fallar. Al terminar la
+canción se genera localmente un bundle JSON/CSV documentado, independiente de FeedBack y
+preparado para que un analista humano lo interprete después.
+
+See [design rationale](docs/design-rationale.md) and the
+[schema reference](docs/analytics-schema.md) for architectural boundaries, formulas,
+and known limitations.
 
 ## Features
 
@@ -34,7 +81,6 @@ detection and per-syllable scoring.
 - **End-of-song summary** — overall accuracy, syllables hit, and best streak.
 - **Objective analytics export** — reliable-F0 pitch error and accuracy bands, timing, robust range/tessitura, sustain drift, existing steadiness/vibrato estimates, dynamics, and phrase/section aggregates. Low-confidence distorted-vocal frames remain visible but do not count as intonation failures. Export is a local schema-v1 JSON/CSV ZIP; see the [bilingual schema reference](docs/analytics-schema.md).
 
-**Español:** la exportación de analítica objetiva conserva los frames de F0 poco fiable sin contarlos como fallos de afinación y genera localmente un ZIP JSON/CSV. Métodos, unidades y límites están documentados en la [referencia bilingüe](docs/analytics-schema.md).
 - **Mic settings** (gear button on the highway) — input device picker (independent of
   your instrument input), capture channel select for multi-input interfaces, pitch
   tolerance, octave-free matching for singing in whatever octave fits your voice, and
@@ -170,3 +216,7 @@ from the AGPL-3.0
 [feedBack-plugin-lyrics-karaoke](https://github.com/got-feedback/feedBack-plugin-lyrics-karaoke)
 plugin, which makes this a derivative work; provenance comments mark the adapted code
 in [screen.js](screen.js) and [routes.py](routes.py).
+
+<div align="center">
+  <sub>Made with 🖤 in Barcelona City 🇪🇸</sub>
+</div>
