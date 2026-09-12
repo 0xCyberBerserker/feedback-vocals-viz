@@ -601,7 +601,10 @@
 
     function csvEscape(value) {
         if (value === null || value === undefined) return '';
-        const text = String(value);
+        let text = String(value);
+        // Treat chart text as untrusted when an analyst opens CSV in a spreadsheet.
+        // Numeric metric values remain numeric; only string cells can be prefixed.
+        if (typeof value === 'string' && /^[\x00-\x20]*[=+@-]/.test(text)) text = `'${text}`;
         return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     }
 

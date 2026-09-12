@@ -177,6 +177,18 @@ test('serialization emits all required files and preserves Unicode', () => {
     JSON.parse(files['session.json']);
 });
 
+test('CSV export neutralizes formulas from untrusted chart text', () => {
+    const collector = new TelemetryCollector({
+        tokens: [{ t: 0, d: 1, w: '=WEBSERVICE("https://invalid")+', midi: 69 }],
+        sections: [{ time: 0, name: '@unsafe' }],
+        options: { contourIntervalMs: 0 },
+    });
+    collector.addFrame({ timestampSeconds: 0.5, syllableIndex: 0, rawFrequencyHz: 440, confidence: 0.99, rms: 0.1, peak: 0.2 });
+    const files = buildExportFiles(collector.finish({ durationMs: 1000 }));
+    assert.match(files['notes.csv'], /"'=WEBSERVICE\(""https:\/\/invalid""\)"/);
+    assert.match(files['sections.csv'], /'@unsafe/);
+});
+
 test('client-side ZIP contains only the local schema files with UTF-8 paths', () => {
     const files = {
         'session.json': '{"artist":"Björk"}\n',
