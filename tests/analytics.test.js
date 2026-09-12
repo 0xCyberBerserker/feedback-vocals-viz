@@ -202,3 +202,9 @@ test('client-side ZIP contains only the local schema files with UTF-8 paths', ()
     });
     assert.equal(view.getUint32(offset, true), 0x02014b50);
 });
+
+test('client-side ZIP writes the standard CRC-32 value', () => {
+    const archive = createZipArchive({ 'check.txt': '123456789' }, 'check', new Date('2026-09-12T10:00:00Z'));
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    assert.equal(view.getUint32(14, true), 0xcbf43926);
+});
